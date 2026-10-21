@@ -255,7 +255,7 @@ a.btn{text-decoration:none;display:inline-block;color:var(--ink)}
       <input id="f-mfiles" type="file" accept="image/*" multiple>
       <textarea id="f-memory" class="in" maxlength="1500" aria-label="Chú thích kỷ niệm" placeholder="Chú thích cho ảnh, không bắt buộc"></textarea>
       <div class="note" id="f-mnote"></div></div>
-    <div class="field"><label id="abs-label">Hôm đó vắng ai</label>
+    <div class="field"><label id="abs-label">Hôm đó thiếu ai</label>
       <div class="checks" id="f-absent" role="group" aria-labelledby="abs-label"></div></div>
     <label style="display:flex;gap:8px;align-items:center"><input id="f-revisit" type="checkbox"> Muốn quay lại</label>
     <div class="field"><label for="f-files">Ảnh quán và món ăn</label>
@@ -461,7 +461,7 @@ function buildChips(){
   if(!years.length)$('#fl-year').innerHTML='<span class="note">Năm sẽ hiện khi bạn lưu quán có ngày ăn.</span>';
   chipRow('#fl-rating','rating',BANDS);chipRow('#fl-taste','taste',TASTES);
   chipRow('#fl-cuisine','cuisine',CUISINES.map(c=>[c,c]));chipRow('#fl-venue','venue',VENUES);
-  chipRow('#fl-absent','absent',MEMBERS.map(m=>[m,'Vắng '+m]).concat([['none','Đủ cả nhóm']]));
+  chipRow('#fl-absent','absent',MEMBERS.map(m=>[m,m]).concat([['none','Đủ cả nhóm']]));
   chipRow('#fl-more','more',[['revisit','Muốn quay lại'],['photo','Có ảnh']]);
   const n=F.status.size+F.year.size+F.rating.size+F.taste.size+F.cuisine.size+F.venue.size+F.absent.size+F.more.size+(F.q?1:0);
   $('#fcount').hidden=!n;$('#fcount').textContent=n;
@@ -517,13 +517,13 @@ function selectPlace(id,center){
   $('#drawer').scrollTop=0;
 }
 function closeDrawer(){selectedId=null;$('#drawer').hidden=true;renderList();schedule()}
-function absentText(p){if(!Array.isArray(p.absent))return'';return p.absent.length?'Vắng '+p.absent.join(', '):'Đủ cả nhóm'}
+function absentText(p){if(!Array.isArray(p.absent))return'';return p.absent.length?p.absent.join(', '):'Đủ cả nhóm'}
 function renderDrawer(){
   const p=places.find(x=>x.id===selectedId);if(!p){$('#drawer').hidden=true;return}
   const wish=p.status==='wish',tl=a=>(a.find(x=>x[0]===p.taste)||[])[1],vl=(VENUES.find(x=>x[0]===p.venue)||[])[1];
   const gal=p.photos&&p.photos.length?'<div class="gallery" tabindex="0" aria-label="Ảnh quán">'+p.photos.map(s=>'<img src="'+esc(s)+'" alt="Ảnh '+esc(p.name)+'">').join('')+'</div>':'<div class="noimg">Chưa có ảnh cho quán này</div>';
   const tags=[wish?'<span class="tag pk">Muốn thử</span>':'',p.example?'<span class="tag">Ví dụ</span>':'',p.approx?'<span class="tag">Vị trí ước tính</span>':'',tl(TASTES)?'<span class="tag">'+esc(tl(TASTES))+'</span>':'',p.cuisine?'<span class="tag">'+esc(p.cuisine)+'</span>':'',vl?'<span class="tag">'+esc(vl)+'</span>':'',p.revisit?'<span class="tag pk">Muốn quay lại</span>':''].join('');
-  const kv=[['Ngày ăn',wish?'':fmtDate(p.date)],['Hôm đó',wish?'':absentText(p)],['Giá',p.price?p.price+'k mỗi người':''],['Địa chỉ',p.address],['Đã gọi',p.dishes]].filter(r=>r[1]).map(r=>'<dt>'+r[0]+'</dt><dd>'+esc(r[1])+'</dd>').join('');
+  const kv=[['Ngày ăn',wish?'':fmtDate(p.date)],['Thiếu ai',wish?'':absentText(p)],['Giá',p.price?p.price+'k mỗi người':''],['Địa chỉ',p.address],['Đã gọi',p.dishes]].filter(r=>r[1]).map(r=>'<dt>'+r[0]+'</dt><dd>'+esc(r[1])+'</dd>').join('');
   $('#drawer').innerHTML='<button class="close" id="d-close" type="button" aria-label="Đóng">×</button>'+gal+
    '<h2 class="dname">'+esc(p.name)+'</h2>'+(wish?'':'<div>'+stars(+p.rating||0)+'</div>')+'<div class="tags">'+tags+'</div>'+
    (kv?'<dl class="kv">'+kv+'</dl>':'')+
