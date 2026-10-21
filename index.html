@@ -246,8 +246,8 @@ a.btn{text-decoration:none;display:inline-block;color:var(--ink)}
     </div>
     <div class="field"><label for="f-addr">Địa chỉ</label><input id="f-addr" class="in" maxlength="200" placeholder="Số nhà, đường, quận"></div>
     <div class="field"><label for="f-coord">Vị trí trên bản đồ</label>
-      <div class="row"><input id="f-coord" class="in" required placeholder="Dán tọa độ hoặc link Google Maps"><button class="btn sm" id="f-pick" type="button">Chọn trên bản đồ</button></div>
-      <div class="note">Trên Google Maps, bấm giữ vào quán rồi chép dòng tọa độ (ví dụ 21.0285, 105.8522), hoặc dán cả link.</div></div>
+      <div class="row"><textarea id="f-coord" class="in" rows="3" style="min-height:64px" placeholder="Dán nguyên nội dung chia sẻ từ Google Maps (tên, địa chỉ, link) hoặc tọa độ"></textarea><button class="btn sm" id="f-pick" type="button">Chọn trên bản đồ</button></div>
+      <div class="note">Trên điện thoại: mở quán trong Google Maps, bấm Chia sẻ, chọn Sao chép rồi dán vào đây. Trang sẽ tự tìm vị trí theo địa chỉ khi bạn bấm Lưu. Cũng dùng được tọa độ như 21.0285, 105.8522.</div></div>
     <div class="field"><label for="f-dishes">Món đã gọi</label><input id="f-dishes" class="in" maxlength="200"></div>
     <div class="field"><label for="f-review">Đánh giá</label><textarea id="f-review" class="in" maxlength="1500" placeholder="Vị, giá, không gian, phục vụ"></textarea></div>
     <div class="field"><label for="f-mfiles">Kỷ niệm (ảnh của hôm đó)</label>
@@ -324,6 +324,40 @@ const LS='bandoanchung.places.v1';
 
 function haversine(a,b){const R=6371,r=Math.PI/180,dl=(b.lat-a.lat)*r,dg=(b.lng-a.lng)*r,x=Math.sin(dl/2)**2+Math.cos(a.lat*r)*Math.cos(b.lat*r)*Math.sin(dg/2)**2;return 2*R*Math.asin(Math.sqrt(x))}
 function parseCoord(s){s=String(s||'').trim();const m=s.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/)||s.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/)||s.match(/[?&](?:q|ll|query|destination)=(-?\d+\.\d+)(?:,|%2C|\+)\s*(-?\d+\.\d+)/i)||s.match(/^\(?\s*(-?\d+(?:\.\d+)?)\s*[,;\s]\s*(-?\d+(?:\.\d+)?)\s*\)?$/);if(!m)return null;const lat=+m[1],lng=+m[2];if(!(Math.abs(lat)<=90&&Math.abs(lng)<=180))return null;return{lat:lat,lng:lng}}
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+async function geocode(q){
+  const ctl=new AbortController(),t=setTimeout(()=>ctl.abort(),9000);
+  try{
+    const r=await fetch('https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=vn&accept-language=vi&viewbox=105.6,21.3,106.1,20.8&q='+encodeURIComponent(q),{signal:ctl.signal});
+    if(!r.ok)return null;const a=await r.json();
+    return a&&a[0]?{lat:+a[0].lat,lng:+a[0].lon,label:a[0].display_name}:null;
+  }catch(e){return null}finally{clearTimeout(t)}
+}
+function splitShared(t){
+  const raw=String(t||''),urls=raw.match(/https?:\/\/[^\s]+/g)||[];
+  const rest=raw.replace(/https?:\/\/[^\s]+/g,' ').split(/\n/).map(x=>x.trim()).filter(Boolean);
+  return{urls:urls,rest:rest};
+}
+const withCity=q=>/hà nội|hanoi/i.test(q)?q:q+', Hà Nội';
+async function resolveFormLocation(){
+  const raw=$('#f-coord').value.trim(),sh=splitShared(raw);
+  for(const u of sh.urls){const c=parseCoord(u);if(c)return{lat:c.lat,lng:c.lng,approx:false}}
+  const direct=parseCoord(raw);if(direct)return{lat:direct.lat,lng:direct.lng,approx:false};
+  const addr=$('#f-addr').value.trim(),name=$('#f-name').value.trim(),qs=[];
+  if(sh.rest.length>1)qs.push(sh.rest.slice(1).join(', '));
+  if(sh.rest.length===1)qs.push(sh.rest[0]);
+  if(addr)qs.push(addr);
+  if(name)qs.push(name);
+  const seen=new Set();let first=true;
+  for(const q0 of qs){
+    const q=withCity(q0);if(seen.has(q))continue;seen.add(q);
+    if(!first)await sleep(1100);first=false;
+    let g=await geocode(q);if(g)return{lat:g.lat,lng:g.lng,approx:false};
+    const q2=q.replace(/^\s*\d+[\w\/-]*\s*/,'').replace(/^(P\.|Phố|Ngõ|Số)\s+/i,'');
+    if(q2!==q){await sleep(1100);g=await geocode(q2);if(g)return{lat:g.lat,lng:g.lng,approx:true}}
+  }
+  return null;
+}
 const fmt=(n,d)=>n.toLocaleString('vi-VN',{maximumFractionDigits:d==null?1:d});
 const fmtDate=s=>{const m=String(s||'').match(/^(\d{4})-(\d{2})-(\d{2})$/);return m?m[3]+'/'+m[2]+'/'+m[1]:''};
 const yearOf=p=>{const m=String(p.date||'').match(/^(\d{4})/);return m?m[1]:''};
@@ -529,7 +563,7 @@ function renderDrawer(){
    (kv?'<dl class="kv">'+kv+'</dl>':'')+
    (p.review?'<div><div class="flabel">Đánh giá</div><div class="review">'+esc(p.review)+'</div></div>':'')+
    ((p.memPhotos&&p.memPhotos.length)||p.memory?'<div><div class="flabel">Kỷ niệm</div>'+(p.memPhotos&&p.memPhotos.length?'<div class="memgrid">'+p.memPhotos.map(s=>'<figure class="polaroid"><img src="'+esc(s)+'" alt="Ảnh kỷ niệm" loading="lazy"></figure>').join('')+'</div>':'')+(p.memory?'<div class="memory">'+esc(p.memory)+'</div>':'')+'</div>':'')+
-   '<div class="actions">'+(wish?'<button class="btn primary sm" id="d-ate" type="button">Đã ăn rồi</button>':'')+'<button class="btn sm" id="d-go" type="button">Chỉ đường đến đây</button><a class="btn sm" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query='+p.lat+','+p.lng+'">Mở Google Maps</a><button class="btn sm" id="d-edit" type="button">Sửa</button><button class="btn sm danger" id="d-del" type="button">Xóa</button></div>';
+   '<div class="actions">'+(wish?'<button class="btn primary sm" id="d-ate" type="button">Đã ăn rồi</button>':'')+'<button class="btn sm" id="d-go" type="button">Chỉ đường đến đây</button><a class="btn sm" target="_blank" rel="noopener" href="'+esc(p.mapsUrl||('https://www.google.com/maps/search/?api=1&query='+p.lat+','+p.lng))+'">Mở Google Maps</a><button class="btn sm" id="d-edit" type="button">Sửa</button><button class="btn sm danger" id="d-del" type="button">Xóa</button></div>';
   $('#d-close').onclick=closeDrawer;
   $('#d-go').onclick=()=>{setRoutePoint('to',{lat:p.lat,lng:p.lng},p.name);setPane('route');closeDrawer()};
   $('#d-edit').onclick=()=>openForm(p);
@@ -565,7 +599,14 @@ function routeResult(){
   schedule();
 }
 ['from','to'].forEach(w=>{$('#r-'+w).addEventListener('input',e=>{const r=resolvePoint(e.target.value);route[w==='from'?'a':'b']=r;routeResult()});
-  $('#r-'+w).addEventListener('change',()=>{if(route.a&&route.b)fit()});
+  $('#r-'+w).addEventListener('change',async e=>{
+    const v=e.target.value.trim(),k=w==='from'?'a':'b';
+    if(v&&!route[k]){
+      const sh=splitShared(v),cu=sh.urls.map(parseCoord).find(Boolean);
+      let g=cu?{lat:cu.lat,lng:cu.lng}:await geocode(withCity(sh.rest.slice(sh.rest.length>1?1:0).join(', ')||v));
+      if(g){setRoutePoint(w,{lat:g.lat,lng:g.lng},sh.rest[0]||v);return}
+      toast('Chưa tìm thấy "'+v.slice(0,40)+'". Thử gõ địa chỉ đầy đủ hơn hoặc chọn trên bản đồ.')}
+    if(route.a&&route.b)fit()});
   $('#pick-'+w).onclick=()=>startPick(w)});
 $('#r-swap').onclick=()=>{const a=$('#r-from').value;$('#r-from').value=$('#r-to').value;$('#r-to').value=a;const t=route.a;route.a=route.b;route.b=t;routeResult()};
 $('#r-clear').onclick=()=>{route.a=route.b=null;$('#r-from').value='';$('#r-to').value='';routeResult()};
@@ -631,17 +672,27 @@ function closeForm(){$('#modal').hidden=true;editing=null}
 $('#btn-add').onclick=()=>openForm(null);
 $('#f-cancel').onclick=closeForm;$('#modal-scrim').onclick=closeForm;
 $('#f-pick').onclick=()=>startPick('form');
+$('#f-coord').addEventListener('input',()=>{
+  const sh=splitShared($('#f-coord').value);
+  if(!sh.urls.length||sh.rest.length<2)return;
+  if(!$('#f-name').value.trim())$('#f-name').value=sh.rest[0];
+  if(!$('#f-addr').value.trim())$('#f-addr').value=sh.rest.slice(1).join(', ');
+});
 $('#form').addEventListener('submit',async e=>{
   e.preventDefault();
-  const c=parseCoord($('#f-coord').value);
-  if(!c){toast('Chưa đọc được vị trí. Hãy dán tọa độ, link Google Maps đầy đủ, hoặc chọn trên bản đồ.');return}
+  const sv=$('#f-save');sv.disabled=true;sv.textContent='Đang tìm vị trí...';
+  const loc=await resolveFormLocation();
+  sv.disabled=false;sv.textContent='Lưu quán';
+  if(!loc){toast('Chưa tìm được vị trí. Hãy nhập địa chỉ cụ thể hơn, dán link Google Maps dạng đầy đủ, hoặc chọn trên bản đồ.');return}
+  const c={lat:loc.lat,lng:loc.lng};
+  const mu=splitShared($('#f-coord').value).urls.find(u=>/google|goo\.gl/i.test(u))||(editing&&editing.mapsUrl)||'';
   const wish=$('#f-status').value==='wish';
   if(!wish&&!draftRating){toast('Hãy chấm sao cho quán nhé');return}
   const pr=$('#f-price').value;
   const p={id:editing?editing.id:newId(),name:$('#f-name').value.trim(),status:wish?'wish':'visited',date:wish?'':$('#f-date').value,rating:wish?0:draftRating,
     taste:$('#f-taste').value,cuisine:$('#f-cuisine').value,venue:$('#f-venue').value,price:pr?Math.round(+pr):0,address:$('#f-addr').value.trim(),
     lat:c.lat,lng:c.lng,dishes:$('#f-dishes').value.trim(),review:$('#f-review').value.trim(),memory:$('#f-memory').value.trim(),
-    revisit:$('#f-revisit').checked,photos:draftPhotos.slice(),memPhotos:draftMem.slice(),absent:MEMBERS.filter((m,i)=>$('#f-abs-'+i).checked),approx:!!(editing&&editing.approx&&Math.abs(editing.lat-c.lat)<1e-9&&Math.abs(editing.lng-c.lng)<1e-9),example:false,createdAt:editing&&editing.createdAt||Date.now()};
+    revisit:$('#f-revisit').checked,photos:draftPhotos.slice(),memPhotos:draftMem.slice(),absent:MEMBERS.filter((m,i)=>$('#f-abs-'+i).checked),approx:!!(loc.approx||(editing&&editing.approx&&Math.abs(editing.lat-c.lat)<1e-9&&Math.abs(editing.lng-c.lng)<1e-9)),mapsUrl:mu,example:false,createdAt:editing&&editing.createdAt||Date.now()};
   const btn=$('#f-save');btn.disabled=true;
   try{await savePlace(p);closeForm();toast('Đã lưu '+p.name);selectPlace(p.id,true)}
   catch(err){toast('Chưa lưu được, thử lại nhé')}
